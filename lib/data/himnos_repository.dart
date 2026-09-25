@@ -276,4 +276,26 @@ class HimnosRepository {
 
   static final List<Himno> himnosPorNumero = [...todosLosHimnos]
     ..sort((a, b) => a.numero.compareTo(b.numero));
+
+  static final List<Himno> himnosPorNombre = [...todosLosHimnos]
+    ..sort((a, b) => _claveOrden(a.nombre).compareTo(_claveOrden(b.nombre)));
+
+  // Orden de diccionario: sin acentos ni signos (¿, ¡, comas) y con la ñ
+  // después de la n.
+  static String _claveOrden(String nombre) {
+    const conAcento = 'áéíóúü';
+    const sinAcento = 'aeiouu';
+    final buffer = StringBuffer();
+    for (final letra in nombre.toLowerCase().split('')) {
+      final i = conAcento.indexOf(letra);
+      if (i >= 0) {
+        buffer.write(sinAcento[i]);
+      } else if (letra == 'ñ') {
+        buffer.write('n\u007f');
+      } else if (RegExp(r'[a-z0-9 ]').hasMatch(letra)) {
+        buffer.write(letra);
+      }
+    }
+    return buffer.toString().replaceAll(RegExp(r' +'), ' ').trim();
+  }
 }

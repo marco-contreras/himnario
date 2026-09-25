@@ -4,6 +4,8 @@ import '../models/himno.dart';
 import '../services/sync_service.dart';
 import 'visor_screen.dart';
 
+enum OrdenHimnos { numero, nombre }
+
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
 
@@ -14,12 +16,18 @@ class MenuScreen extends StatefulWidget {
 class _MenuScreenState extends State<MenuScreen> {
   List<Himno> _himnosFiltrados = [];
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   bool _estaVerificandoToken = true;
+  OrdenHimnos _orden = OrdenHimnos.numero;
+
+  List<Himno> get _himnosOrdenados => _orden == OrdenHimnos.numero
+      ? HimnosRepository.himnosPorNumero
+      : HimnosRepository.himnosPorNombre;
 
   @override
   void initState() {
     super.initState();
-    _himnosFiltrados = HimnosRepository.todosLosHimnos;
+    _himnosFiltrados = _himnosOrdenados;
     _verificarTokenDominical();
   }
 
@@ -38,15 +46,22 @@ class _MenuScreenState extends State<MenuScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _cambiarOrden(OrdenHimnos orden) {
+    _orden = orden;
+    _filtrarHimnos(_searchController.text);
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
   }
 
   void _filtrarHimnos(String query) {
     setState(() {
       if (query.isEmpty) {
-        _himnosFiltrados = HimnosRepository.todosLosHimnos;
+        _himnosFiltrados = _himnosOrdenados;
       } else {
-        _himnosFiltrados = HimnosRepository.todosLosHimnos.where((himno) {
+        _himnosFiltrados = _himnosOrdenados.where((himno) {
           final queryLower = query.toLowerCase();
           final coincideNombre = himno.nombre.toLowerCase().contains(queryLower);
           final coincideNumero = himno.numero.toString().contains(queryLower);
@@ -100,9 +115,31 @@ class _MenuScreenState extends State<MenuScreen> {
                     ),
                   ),
                 ),
+                // Orden de la lista
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12.0, 0, 12.0, 8.0),
+                  child: SegmentedButton<OrdenHimnos>(
+                    segments: const [
+                      ButtonSegment(
+                        value: OrdenHimnos.numero,
+                        icon: Icon(Icons.format_list_numbered),
+                        label: Text('Número'),
+                      ),
+                      ButtonSegment(
+                        value: OrdenHimnos.nombre,
+                        icon: Icon(Icons.sort_by_alpha),
+                        label: Text('Nombre'),
+                      ),
+                    ],
+                    selected: {_orden},
+                    onSelectionChanged: (seleccion) =>
+                        _cambiarOrden(seleccion.first),
+                  ),
+                ),
                 // Lista de Himnos
                 Expanded(
                   child: ListView.builder(
+                    controller: _scrollController,
                     itemCount: _himnosFiltrados.length,
                     itemBuilder: (context, index) {
                       final himno = _himnosFiltrados[index];
