@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:pdfx/pdfx.dart';
+import '../data/himnos_repository.dart';
 import '../models/himno.dart';
 import '../services/download_service.dart';
 
@@ -23,7 +23,6 @@ class VisorScreen extends StatefulWidget {
 class _VisorScreenState extends State<VisorScreen> {
   static const double _separacionPaginas = 8.0;
   static const double _zoomMaximo = 4.0;
-  static const double _anchoVistaPrevia = 700.0;
 
   static const Widget _indicadorCarga = Center(
     child: Column(
@@ -38,9 +37,10 @@ class _VisorScreenState extends State<VisorScreen> {
 
   late Himno _himnoActual;
   final TransformationController _transformacion = TransformationController();
+  final SearchController _buscador = SearchController();
   final List<ui.Image> _paginas = [];
-  int _totalPaginasPdf = 1;
-  int _paginaActualPdf = 1;
+  int _totalPaginas = 1;
+  int _paginaActual = 1;
   bool _errorCarga = false;
   Size? _tamanoVista;
 
@@ -57,7 +57,7 @@ class _VisorScreenState extends State<VisorScreen> {
     super.initState();
     _himnoActual = widget.himnoActual;
     _transformacion.addListener(_actualizarPaginaActual);
-    _cargarPdf();
+    _cargarHimno();
   }
 
   int get _indiceActual =>
@@ -71,86 +71,42 @@ class _VisorScreenState extends State<VisorScreen> {
     setState(() {
       _himnoActual = himno;
       _errorCarga = false;
-      _paginaActualPdf = 1;
-      _totalPaginasPdf = 1;
+      _paginaActual = 1;
+      _totalPaginas = 1;
     });
-    _cargarPdf();
+    _cargarHimno();
   }
 
-  Future<void> _cargarPdf() async {
+  // Cada página es una imagen de 2400 px de ancho, con resolución de sobra
+  // para el zoom: el zoom solo la escala y no hay que volver a dibujar nada.
+  Future<void> _cargarHimno() async {
     final int carga = ++_cargaVigente;
     final Himno himno = _himnoActual;
     bool esVigente() => mounted && carga == _cargaVigente;
 
-    PdfDocument? documento;
     try {
-      final bytes = await DownloadService.obtenerPdf(himno);
+      final List<String> rutas = await DownloadService.paginasDe(himno);
       if (!esVigente()) return;
-      final PdfDocument abierto = await PdfDocument.openData(bytes);
-      documento = abierto;
-      if (!esVigente()) return;
-      setState(() => _totalPaginasPdf = abierto.pagesCount);
+      if (rutas.isEmpty) {
+        throw StateError('No hay páginas para el himno ${himno.numero}');
+      }
+      setState(() => _totalPaginas = rutas.length);
 
-      // Primero una versión liviana para mostrar el himno rápido y luego la de
-      // alta resolución, que la reemplaza en el mismo lugar.
-      for (final double ancho in [_anchoVistaPrevia, _anchoAltaResolucion()]) {
-        for (int numero = 1; numero <= abierto.pagesCount; numero++) {
-          final ui.Image imagen =
-              await _renderizarPagina(abierto, numero, ancho);
-          if (!esVigente()) {
-            imagen.dispose();
-            return;
-          }
-          setState(() {
-            if (numero <= _paginas.length) {
-              _paginas[numero - 1].dispose();
-              _paginas[numero - 1] = imagen;
-            } else {
-              _paginas.add(imagen);
-            }
-          });
+      for (final String ruta in rutas) {
+        final ui.Image imagen =
+            await decodeImageFromList(await DownloadService.obtenerPagina(ruta));
+        if (!esVigente()) {
+          imagen.dispose();
+          return;
         }
+        setState(() => _paginas.add(imagen));
       }
     } catch (e) {
-      debugPrint('Error al cargar PDF del himno ${himno.numero}: $e');
+      debugPrint('Error al cargar el himno ${himno.numero}: $e');
       if (esVigente()) {
         _liberarPaginas();
         setState(() => _errorCarga = true);
       }
-    } finally {
-      await documento?.close();
-    }
-  }
-
-  // La imagen final tiene resolución de sobra para el zoom: así el zoom solo
-  // escala la imagen y no vuelve a dibujar el PDF, que es lo que provocaba
-  // los destellos con PdfViewPinch en web.
-  double _anchoAltaResolucion() {
-    final double anchoFisico = WidgetsBinding
-            .instance.platformDispatcher.implicitView?.physicalSize.width ??
-        1600;
-    return (anchoFisico * 1.5).clamp(1600.0, 2400.0);
-  }
-
-  Future<ui.Image> _renderizarPagina(
-    PdfDocument documento,
-    int numero,
-    double ancho,
-  ) async {
-    final PdfPage pagina = await documento.getPage(numero);
-    try {
-      final PdfPageImage? render = await pagina.render(
-        width: ancho,
-        height: ancho * pagina.height / pagina.width,
-        format: PdfPageImageFormat.png,
-        backgroundColor: '#FFFFFF',
-      );
-      if (render == null) {
-        throw StateError('La página $numero no se pudo dibujar');
-      }
-      return await decodeImageFromList(render.bytes);
-    } finally {
-      await pagina.close();
     }
   }
 
@@ -182,12 +138,12 @@ class _VisorScreenState extends State<VisorScreen> {
     final double centro =
         (-m.getTranslation().y + vista.height / 2) / m.getMaxScaleOnAxis();
     int pagina = 1;
-    while (pagina < _totalPaginasPdf &&
+    while (pagina < _totalPaginas &&
         _inicioPagina(pagina, vista.width) <= centro) {
       pagina++;
     }
-    if (pagina != _paginaActualPdf) {
-      setState(() => _paginaActualPdf = pagina);
+    if (pagina != _paginaActual) {
+      setState(() => _paginaActual = pagina);
     }
   }
 
@@ -197,13 +153,13 @@ class _VisorScreenState extends State<VisorScreen> {
     final Matrix4 m = _transformacion.value;
     final double escala = m.getMaxScaleOnAxis();
     final double altoContenido =
-        _inicioPagina(_totalPaginasPdf, vista.width) - _separacionPaginas;
+        _inicioPagina(_totalPaginas, vista.width) - _separacionPaginas;
     final double maxY = math.max(0.0, altoContenido * escala - vista.height);
     final double y =
         (_inicioPagina(numero - 1, vista.width) * escala).clamp(0.0, maxY);
     _transformacion.value = Matrix4.diagonal3Values(escala, escala, 1)
       ..setTranslationRaw(m.getTranslation().x, -y, 0);
-    setState(() => _paginaActualPdf = numero);
+    setState(() => _paginaActual = numero);
   }
 
   void _cambiarHimno(int offset) {
@@ -242,8 +198,68 @@ class _VisorScreenState extends State<VisorScreen> {
     }
   }
 
+  // El número exacto va primero: al escribir "64" aparece el 64 antes que
+  // el 164 o el 264.
+  List<Himno> _sugerencias(String texto) {
+    if (texto.trim().isEmpty) return const [];
+    final List<Himno> resultados =
+        HimnosRepository.buscar(texto, HimnosRepository.himnosPorNumero);
+    final int? exacto = int.tryParse(texto.trim());
+    return [
+      ...resultados.where((h) => h.numero == exacto),
+      ...resultados.where((h) => h.numero != exacto),
+    ];
+  }
+
+  void _irAlHimnoBuscado(Himno himno) {
+    _buscador.closeView('');
+    _abrirHimno(himno);
+  }
+
+  Widget _construirBuscador() {
+    return SearchAnchor(
+      searchController: _buscador,
+      viewHintText: 'Buscar por número o título',
+      viewBackgroundColor: Colors.white,
+      viewSurfaceTintColor: Colors.transparent,
+      viewOnSubmitted: (texto) {
+        final List<Himno> resultados = _sugerencias(texto);
+        if (resultados.isNotEmpty) _irAlHimnoBuscado(resultados.first);
+      },
+      builder: (context, controller) => SearchBar(
+        controller: controller,
+        hintText: 'Buscar',
+        leading: const Icon(Icons.search),
+        elevation: const WidgetStatePropertyAll(0),
+        backgroundColor: const WidgetStatePropertyAll(Colors.white),
+        constraints: const BoxConstraints(maxWidth: 140, minHeight: 40),
+        side: WidgetStatePropertyAll(
+          BorderSide(color: Theme.of(context).colorScheme.outline),
+        ),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        onTap: controller.openView,
+        onChanged: (_) => controller.openView(),
+      ),
+      suggestionsBuilder: (context, controller) =>
+          _sugerencias(controller.text).map(
+        (himno) => ListTile(
+          leading: CircleAvatar(
+            backgroundColor: Theme.of(context).primaryColor,
+            foregroundColor: Colors.white,
+            child: Text('${himno.numero}'),
+          ),
+          title: Text(himno.nombre),
+          onTap: () => _irAlHimnoBuscado(himno),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    _buscador.dispose();
     _transformacion.dispose();
     _liberarPaginas();
     super.dispose();
@@ -301,10 +317,10 @@ class _VisorScreenState extends State<VisorScreen> {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  for (int i = 0; i < _totalPaginasPdf; i++)
+                  for (int i = 0; i < _totalPaginas; i++)
                     Padding(
                       padding: EdgeInsets.only(
-                        bottom: i < _totalPaginasPdf - 1 ? _separacionPaginas : 0,
+                        bottom: i < _totalPaginas - 1 ? _separacionPaginas : 0,
                       ),
                       child: SizedBox(
                         width: ancho,
@@ -339,7 +355,7 @@ class _VisorScreenState extends State<VisorScreen> {
     final bool hayAnterior = indice > 0;
     final bool haySiguiente =
         indice >= 0 && indice < widget.listaHimnos.length - 1;
-    final bool mostrarPaginas = _paginas.isNotEmpty && _totalPaginasPdf > 1;
+    final bool mostrarPaginas = _paginas.isNotEmpty && _totalPaginas > 1;
 
     return Scaffold(
       // --- TOP BAR ---
@@ -348,11 +364,20 @@ class _VisorScreenState extends State<VisorScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text('Himno #${_himnoActual.numero}'),
+        title: Text(
+          'Himno #${_himnoActual.numero}',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: _construirBuscador(),
+          ),
+        ],
       ),
 
-      // --- CENTRO (VISOR PDF) ---
+      // --- CENTRO (VISOR) ---
       body: Listener(
         behavior: HitTestBehavior.translucent,
         onPointerDown: _alTocar,
@@ -368,17 +393,17 @@ class _VisorScreenState extends State<VisorScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // BARRA HORIZONTAL DE PÁGINAS (Solo si el PDF tiene más de 1 página)
+            // BARRA HORIZONTAL DE PÁGINAS (Solo si el himno tiene más de 1 página)
             if (mostrarPaginas)
               SizedBox(
                 height: 40,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                  itemCount: _totalPaginasPdf,
+                  itemCount: _totalPaginas,
                   itemBuilder: (context, index) {
                     int numPagina = index + 1;
-                    bool esSeleccionada = numPagina == _paginaActualPdf;
+                    bool esSeleccionada = numPagina == _paginaActual;
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4.0),
                       child: ChoiceChip(

@@ -15,7 +15,7 @@ class _DescargaScreenState extends State<DescargaScreen> {
   bool _descargando = false;
   bool _huboFallos = false;
   String _estado =
-      'Para usar el himnario sin internet, es necesario descargar los archivos en este dispositivo (cerca de 400 MB, se recomienda usar Wi-Fi).';
+      'Para usar el himnario sin internet, es necesario descargar los archivos en este dispositivo (cerca de 170 MB, se recomienda usar Wi-Fi).';
 
   Future<void> _iniciarDescarga() async {
     setState(() {

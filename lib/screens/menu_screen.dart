@@ -58,16 +58,7 @@ class _MenuScreenState extends State<MenuScreen> {
 
   void _filtrarHimnos(String query) {
     setState(() {
-      if (query.isEmpty) {
-        _himnosFiltrados = _himnosOrdenados;
-      } else {
-        _himnosFiltrados = _himnosOrdenados.where((himno) {
-          final queryLower = query.toLowerCase();
-          final coincideNombre = himno.nombre.toLowerCase().contains(queryLower);
-          final coincideNumero = himno.numero.toString().contains(queryLower);
-          return coincideNombre || coincideNumero;
-        }).toList();
-      }
+      _himnosFiltrados = HimnosRepository.buscar(query, _himnosOrdenados);
     });
   }
 
@@ -75,7 +66,10 @@ class _MenuScreenState extends State<MenuScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Himnario IBEFI'),
+        title: const Text(
+          'Himnario IBEFI',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
       ),
       body: _estaVerificandoToken

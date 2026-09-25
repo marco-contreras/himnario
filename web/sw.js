@@ -15,7 +15,7 @@ const ARCHIVOS_BASE = [
 ];
 
 // Recursos externos con URL versionada: si ya están en caché no cambian.
-const HOSTS_EXTERNOS = ['fonts.gstatic.com', 'www.gstatic.com', 'cdn.jsdelivr.net'];
+const HOSTS_EXTERNOS = ['fonts.gstatic.com', 'www.gstatic.com'];
 
 const ESPERA_RED_MS = 4000;
 
@@ -35,10 +35,20 @@ self.addEventListener('activate', (event) => {
       await Promise.all(
         nombres.filter((nombre) => nombre !== CACHE).map((nombre) => caches.delete(nombre))
       );
+      await borrarPdfViejos();
       await self.clients.claim();
     })()
   );
 });
+
+// Los himnos pasaron de PDF a WebP: se borran solo los PDF (~400 MB) y no la
+// caché entera, porque ahí también está la app que se necesita sin conexión.
+async function borrarPdfViejos() {
+  const cache = await caches.open(CACHE);
+  for (const request of await cache.keys()) {
+    if (new URL(request.url).pathname.endsWith('.pdf')) await cache.delete(request);
+  }
+}
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
@@ -47,7 +57,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin === self.location.origin) {
     event.respondWith(
-      url.pathname.endsWith('.pdf') ? cacheYActualizar(event) : redPrimero(event)
+      url.pathname.includes('/assets/HIMNARIOS/') ? cacheYActualizar(event) : redPrimero(event)
     );
   } else if (HOSTS_EXTERNOS.includes(url.hostname)) {
     event.respondWith(cachePrimero(request));
@@ -68,8 +78,8 @@ function descargarYGuardar(request) {
   });
 }
 
-// PDFs: se sirven desde la caché y se revisa en segundo plano si cambiaron,
-// así una actualización del PDF llega sin tener que borrar nada.
+// Himnos: se sirven desde la caché y se revisa en segundo plano si cambiaron,
+// así una página corregida llega sin tener que borrar nada.
 async function cacheYActualizar(event) {
   const red = descargarYGuardar(event.request);
   event.waitUntil(red.catch(() => {}));

@@ -20,7 +20,4 @@ class Himno {
       'numero': numero,
     };
   }
-
-  // Nombre formateado para el archivo local (ej. "1.pdf")
-  String get nombreArchivo => '$numero.pdf';
 }

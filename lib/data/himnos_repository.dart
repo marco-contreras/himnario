@@ -278,11 +278,23 @@ class HimnosRepository {
     ..sort((a, b) => a.numero.compareTo(b.numero));
 
   static final List<Himno> himnosPorNombre = [...todosLosHimnos]
-    ..sort((a, b) => _claveOrden(a.nombre).compareTo(_claveOrden(b.nombre)));
+    ..sort((a, b) => _normalizar(a.nombre).compareTo(_normalizar(b.nombre)));
 
-  // Orden de diccionario: sin acentos ni signos (¿, ¡, comas) y con la ñ
-  // después de la n.
-  static String _claveOrden(String nombre) {
+  /// Himnos de [lista] cuyo número o título contiene [texto], sin importar
+  /// acentos, mayúsculas ni signos.
+  static List<Himno> buscar(String texto, List<Himno> lista) {
+    final String consulta = _normalizar(texto);
+    if (consulta.isEmpty) return lista;
+    return lista
+        .where((himno) =>
+            himno.numero.toString().contains(consulta) ||
+            _normalizar(himno.nombre).contains(consulta))
+        .toList();
+  }
+
+  // Sin acentos ni signos (¿, ¡, comas) y con la ñ después de la n: sirve
+  // para ordenar como diccionario y para buscar sin importar acentos.
+  static String _normalizar(String nombre) {
     const conAcento = 'áéíóúü';
     const sinAcento = 'aeiouu';
     final buffer = StringBuffer();
