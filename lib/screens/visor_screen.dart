@@ -21,7 +21,6 @@ class VisorScreen extends StatefulWidget {
 }
 
 class _VisorScreenState extends State<VisorScreen> {
-  static const double _separacionPaginas = 8.0;
   static const double _zoomMaximo = 4.0;
 
   static const Widget _indicadorCarga = Center(
@@ -40,11 +39,10 @@ class _VisorScreenState extends State<VisorScreen> {
   final SearchController _buscador = SearchController();
   bool? _busquedaPantallaCompleta;
   ui.PointerDeviceKind? _ultimoPuntero;
-  final List<ui.Image> _paginas = [];
-  int _totalPaginas = 1;
+  // Un lugar por página del himno; null mientras esa imagen se decodifica.
+  final List<ui.Image?> _paginas = [];
   int _paginaActual = 1;
   bool _errorCarga = false;
-  Size? _tamanoVista;
 
   // Si el usuario cambia de himno o sale antes de que termine una carga,
   // las páginas de esa carga ya no son las vigentes y se descartan.
@@ -58,30 +56,35 @@ class _VisorScreenState extends State<VisorScreen> {
   void initState() {
     super.initState();
     _himnoActual = widget.himnoActual;
-    _transformacion.addListener(_actualizarPaginaActual);
     _cargarHimno();
   }
 
   int get _indiceActual =>
       widget.listaHimnos.indexWhere((h) => h.numero == _himnoActual.numero);
 
+  int get _totalPaginas => _paginas.length;
+
   bool get _hayZoom => _transformacion.value.getMaxScaleOnAxis() > 1.01;
 
-  void _abrirHimno(Himno himno) {
+  // "24-1", "24-2"... en los himnos de varias hojas; "64" en los de una.
+  String _etiqueta(int pagina) => _totalPaginas > 1
+      ? '${_himnoActual.numero}-$pagina'
+      : '${_himnoActual.numero}';
+
+  void _abrirHimno(Himno himno, {bool enUltimaPagina = false}) {
     _liberarPaginas();
     _transformacion.value = Matrix4.identity();
     setState(() {
       _himnoActual = himno;
       _errorCarga = false;
       _paginaActual = 1;
-      _totalPaginas = 1;
     });
-    _cargarHimno();
+    _cargarHimno(enUltimaPagina: enUltimaPagina);
   }
 
   // Cada página es una imagen de 2400 px de ancho, con resolución de sobra
   // para el zoom: el zoom solo la escala y no hay que volver a dibujar nada.
-  Future<void> _cargarHimno() async {
+  Future<void> _cargarHimno({bool enUltimaPagina = false}) async {
     final int carga = ++_cargaVigente;
     final Himno himno = _himnoActual;
     bool esVigente() => mounted && carga == _cargaVigente;
@@ -92,16 +95,26 @@ class _VisorScreenState extends State<VisorScreen> {
       if (rutas.isEmpty) {
         throw StateError('No hay páginas para el himno ${himno.numero}');
       }
-      setState(() => _totalPaginas = rutas.length);
+      final int inicial = enUltimaPagina ? rutas.length : 1;
+      setState(() {
+        _paginas.addAll(List<ui.Image?>.filled(rutas.length, null));
+        _paginaActual = inicial;
+      });
 
-      for (final String ruta in rutas) {
-        final ui.Image imagen =
-            await decodeImageFromList(await DownloadService.obtenerPagina(ruta));
+      // Primero la página que se va a mostrar y después las demás.
+      final List<int> orden = [
+        inicial - 1,
+        for (int i = 0; i < rutas.length; i++)
+          if (i != inicial - 1) i,
+      ];
+      for (final int i in orden) {
+        final ui.Image imagen = await decodeImageFromList(
+            await DownloadService.obtenerPagina(rutas[i]));
         if (!esVigente()) {
           imagen.dispose();
           return;
         }
-        setState(() => _paginas.add(imagen));
+        setState(() => _paginas[i] = imagen);
       }
     } catch (e) {
       debugPrint('Error al cargar el himno ${himno.numero}: $e');
@@ -113,68 +126,37 @@ class _VisorScreenState extends State<VisorScreen> {
   }
 
   void _liberarPaginas() {
-    for (final ui.Image pagina in _paginas) {
-      pagina.dispose();
+    for (final ui.Image? pagina in _paginas) {
+      pagina?.dispose();
     }
     _paginas.clear();
   }
 
-  double _altoPagina(int indice, double ancho) {
-    final ui.Image referencia =
-        indice < _paginas.length ? _paginas[indice] : _paginas.first;
-    return ancho * referencia.height / referencia.width;
-  }
-
-  double _inicioPagina(int indice, double ancho) {
-    double y = 0;
-    for (int i = 0; i < indice; i++) {
-      y += _altoPagina(i, ancho) + _separacionPaginas;
-    }
-    return y;
-  }
-
-  void _actualizarPaginaActual() {
-    final Size? vista = _tamanoVista;
-    if (vista == null || _paginas.isEmpty) return;
-    final Matrix4 m = _transformacion.value;
-    final double centro =
-        (-m.getTranslation().y + vista.height / 2) / m.getMaxScaleOnAxis();
-    int pagina = 1;
-    while (pagina < _totalPaginas &&
-        _inicioPagina(pagina, vista.width) <= centro) {
-      pagina++;
-    }
-    if (pagina != _paginaActual) {
-      setState(() => _paginaActual = pagina);
-    }
-  }
-
   void _irAPagina(int numero) {
-    final Size? vista = _tamanoVista;
-    if (vista == null || _paginas.isEmpty) return;
-    final Matrix4 m = _transformacion.value;
-    final double escala = m.getMaxScaleOnAxis();
-    final double altoContenido =
-        _inicioPagina(_totalPaginas, vista.width) - _separacionPaginas;
-    final double maxY = math.max(0.0, altoContenido * escala - vista.height);
-    final double y =
-        (_inicioPagina(numero - 1, vista.width) * escala).clamp(0.0, maxY);
-    _transformacion.value = Matrix4.diagonal3Values(escala, escala, 1)
-      ..setTranslationRaw(m.getTranslation().x, -y, 0);
+    _transformacion.value = Matrix4.identity();
     setState(() => _paginaActual = numero);
   }
 
-  void _cambiarHimno(int offset) {
-    final int nuevoIndice = _indiceActual + offset;
+  // Como un libro: primero se pasan las páginas del himno y después se llega
+  // al himno vecino. Al retroceder desde la primera página se abre el himno
+  // anterior en su última página.
+  void _avanzar(int direccion) {
+    final int pagina = _paginaActual + direccion;
+    if (pagina >= 1 && pagina <= _totalPaginas) {
+      _irAPagina(pagina);
+      return;
+    }
+    final int nuevoIndice = _indiceActual + direccion;
     if (nuevoIndice >= 0 && nuevoIndice < widget.listaHimnos.length) {
-      _abrirHimno(widget.listaHimnos[nuevoIndice]);
+      _abrirHimno(widget.listaHimnos[nuevoIndice],
+          enUltimaPagina: direccion < 0);
     }
   }
 
-  // Deslizar a los lados cambia de himno. Se usan eventos de puntero crudos
-  // porque el InteractiveViewer se queda con los gestos de arrastre; solo
-  // cuenta con un dedo y sin zoom, para no chocar con el pellizco ni con
-  // mover una página ampliada.
+  // Deslizar a los lados pasa de página o de himno. Se usan eventos de
+  // puntero crudos porque el InteractiveViewer se queda con los gestos de
+  // arrastre; solo cuenta con un dedo y sin zoom, para no chocar con el
+  // pellizco ni con mover una página ampliada.
   void _alTocar(PointerDownEvent evento) {
     _dedosEnPantalla.add(evento.pointer);
     if (_dedosEnPantalla.length == 1) {
@@ -196,7 +178,7 @@ class _VisorScreenState extends State<VisorScreen> {
     final double minimo = math.max(60.0, MediaQuery.sizeOf(context).width * 0.15);
     if (recorrido.dx.abs() >= minimo &&
         recorrido.dx.abs() > recorrido.dy.abs() * 2) {
-      _cambiarHimno(recorrido.dx < 0 ? 1 : -1);
+      _avanzar(recorrido.dx < 0 ? 1 : -1);
     }
   }
 
@@ -324,11 +306,10 @@ class _VisorScreenState extends State<VisorScreen> {
     );
   }
 
-  Widget _construirPaginas() {
+  Widget _construirPagina(ui.Image imagen) {
     return LayoutBuilder(
       builder: (context, restricciones) {
         final Size vista = restricciones.biggest;
-        _tamanoVista = vista;
         final double ancho = vista.width;
 
         return InteractiveViewer(
@@ -340,28 +321,16 @@ class _VisorScreenState extends State<VisorScreen> {
             width: ancho,
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: vista.height),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (int i = 0; i < _totalPaginas; i++)
-                    Padding(
-                      padding: EdgeInsets.only(
-                        bottom: i < _totalPaginas - 1 ? _separacionPaginas : 0,
-                      ),
-                      child: SizedBox(
-                        width: ancho,
-                        height: _altoPagina(i, ancho),
-                        child: i < _paginas.length
-                            ? RawImage(
-                                image: _paginas[i],
-                                fit: BoxFit.fill,
-                                filterQuality: FilterQuality.medium,
-                              )
-                            : const Center(child: CircularProgressIndicator()),
-                      ),
-                    ),
-                ],
+              child: Center(
+                child: SizedBox(
+                  width: ancho,
+                  height: ancho * imagen.height / imagen.width,
+                  child: RawImage(
+                    image: imagen,
+                    fit: BoxFit.fill,
+                    filterQuality: FilterQuality.medium,
+                  ),
+                ),
               ),
             ),
           ),
@@ -372,17 +341,20 @@ class _VisorScreenState extends State<VisorScreen> {
 
   Widget _construirCuerpo() {
     if (_errorCarga) return _construirError();
-    if (_paginas.isEmpty) return _indicadorCarga;
-    return _construirPaginas();
+    final ui.Image? imagen =
+        _paginas.isEmpty ? null : _paginas[_paginaActual - 1];
+    if (imagen == null) return _indicadorCarga;
+    return _construirPagina(imagen);
   }
 
   @override
   Widget build(BuildContext context) {
     final int indice = _indiceActual;
-    final bool hayAnterior = indice > 0;
-    final bool haySiguiente =
-        indice >= 0 && indice < widget.listaHimnos.length - 1;
-    final bool mostrarPaginas = _paginas.isNotEmpty && _totalPaginas > 1;
+    final bool hayAnterior = indice > 0 || _paginaActual > 1;
+    final bool haySiguiente = (indice >= 0 &&
+            indice < widget.listaHimnos.length - 1) ||
+        _paginaActual < _totalPaginas;
+    final bool mostrarPaginas = _totalPaginas > 1;
 
     return Scaffold(
       // --- TOP BAR ---
@@ -392,7 +364,7 @@ class _VisorScreenState extends State<VisorScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Himno #${_himnoActual.numero}',
+          'Himno #${_etiqueta(_paginaActual)}',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
@@ -434,7 +406,7 @@ class _VisorScreenState extends State<VisorScreen> {
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4.0),
                       child: ChoiceChip(
-                        label: Text('Pág $numPagina'),
+                        label: Text(_etiqueta(numPagina)),
                         selected: esSeleccionada,
                         onSelected: (bool selected) {
                           if (selected) _irAPagina(numPagina);
@@ -447,19 +419,19 @@ class _VisorScreenState extends State<VisorScreen> {
 
             if (mostrarPaginas) const SizedBox(height: 6),
 
-            // NAVEGACIÓN ENTRE HIMNOS << # >>
+            // NAVEGACIÓN << # >> (páginas y himnos, como un libro)
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back_ios),
-                  onPressed: hayAnterior ? () => _cambiarHimno(-1) : null,
-                  tooltip: 'Himno Anterior',
+                  onPressed: hayAnterior ? () => _avanzar(-1) : null,
+                  tooltip: 'Anterior',
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20.0),
                   child: Text(
-                    '${_himnoActual.numero}',
+                    _etiqueta(_paginaActual),
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -468,8 +440,8 @@ class _VisorScreenState extends State<VisorScreen> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.arrow_forward_ios),
-                  onPressed: haySiguiente ? () => _cambiarHimno(1) : null,
-                  tooltip: 'Himno Siguiente',
+                  onPressed: haySiguiente ? () => _avanzar(1) : null,
+                  tooltip: 'Siguiente',
                 ),
               ],
             ),
