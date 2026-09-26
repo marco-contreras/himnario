@@ -38,6 +38,8 @@ class _VisorScreenState extends State<VisorScreen> {
   late Himno _himnoActual;
   final TransformationController _transformacion = TransformationController();
   final SearchController _buscador = SearchController();
+  bool? _busquedaPantallaCompleta;
+  ui.PointerDeviceKind? _ultimoPuntero;
   final List<ui.Image> _paginas = [];
   int _totalPaginas = 1;
   int _paginaActual = 1;
@@ -213,12 +215,34 @@ class _VisorScreenState extends State<VisorScreen> {
 
   void _irAlHimnoBuscado(Himno himno) {
     _buscador.closeView('');
+    FocusManager.instance.primaryFocus?.unfocus();
     _abrirHimno(himno);
+  }
+
+  // Chrome en tablets grandes abre los sitios en modo escritorio, así que
+  // Flutter cree que es una PC y abre la búsqueda como panel. Ese panel se
+  // cierra cuando el teclado en pantalla cambia el tamaño de la ventana, antes
+  // de que llegue el toque en la sugerencia. Por eso se decide según con qué
+  // se tocó la barra: dedo o lápiz, pantalla completa; mouse, panel.
+  void _abrirBusqueda(SearchController controller) {
+    if (controller.isOpen) return;
+    final ui.PointerDeviceKind? puntero = _ultimoPuntero;
+    final bool? pantallaCompleta =
+        puntero == null ? null : puntero != ui.PointerDeviceKind.mouse;
+    if (pantallaCompleta == _busquedaPantallaCompleta) {
+      controller.openView();
+      return;
+    }
+    setState(() => _busquedaPantallaCompleta = pantallaCompleta);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !controller.isOpen) controller.openView();
+    });
   }
 
   Widget _construirBuscador() {
     return SearchAnchor(
       searchController: _buscador,
+      isFullScreen: _busquedaPantallaCompleta,
       viewHintText: 'Buscar por número o título',
       viewBackgroundColor: Colors.white,
       viewSurfaceTintColor: Colors.transparent,
@@ -226,21 +250,24 @@ class _VisorScreenState extends State<VisorScreen> {
         final List<Himno> resultados = _sugerencias(texto);
         if (resultados.isNotEmpty) _irAlHimnoBuscado(resultados.first);
       },
-      builder: (context, controller) => SearchBar(
-        controller: controller,
-        hintText: 'Buscar',
-        leading: const Icon(Icons.search),
-        elevation: const WidgetStatePropertyAll(0),
-        backgroundColor: const WidgetStatePropertyAll(Colors.white),
-        constraints: const BoxConstraints(maxWidth: 140, minHeight: 40),
-        side: WidgetStatePropertyAll(
-          BorderSide(color: Theme.of(context).colorScheme.outline),
+      builder: (context, controller) => Listener(
+        onPointerDown: (evento) => _ultimoPuntero = evento.kind,
+        child: SearchBar(
+          controller: controller,
+          hintText: 'Buscar',
+          leading: const Icon(Icons.search),
+          elevation: const WidgetStatePropertyAll(0),
+          backgroundColor: const WidgetStatePropertyAll(Colors.white),
+          constraints: const BoxConstraints(maxWidth: 130, minHeight: 40),
+          side: WidgetStatePropertyAll(
+            BorderSide(color: Theme.of(context).colorScheme.outline),
+          ),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          onTap: () => _abrirBusqueda(controller),
+          onChanged: (_) => _abrirBusqueda(controller),
         ),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-        onTap: controller.openView,
-        onChanged: (_) => controller.openView(),
       ),
       suggestionsBuilder: (context, controller) =>
           _sugerencias(controller.text).map(
