@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'download_service.dart';
 import 'red_web.dart';
@@ -78,12 +77,13 @@ class Revision {
 }
 
 class ActualizacionService {
-  static const String _keyManifiestoLocal = 'manifiesto_hojas';
-  static const String _urlManifiesto = 'versiones.json';
+  static const String _keyManifiestoLocal =
+      'manifiesto_${DownloadService.himnario}';
   static const int _descargasSimultaneas = 4;
 
   static Future<Manifiesto?> leerRemoto() async {
-    final String? texto = await RedWeb.leerSinCache(_urlManifiesto);
+    final String? texto = await RedWeb.leerSinCache(
+        RedWeb.urlDeAsset(DownloadService.rutaManifiesto));
     if (texto == null) return null;
     try {
       return Manifiesto.desdeJson(texto);
@@ -97,14 +97,29 @@ class ActualizacionService {
     await prefs.setString(_keyManifiestoLocal, manifiesto.aJson());
   }
 
-  // Quien descargó antes de que existiera este sistema no tiene manifiesto
-  // guardado: se parte del estado de las hojas cuando se agregó.
-  static Future<Manifiesto> _leerLocal() async {
+  // Sin registro guardado (por ejemplo, quien descargó antes de que existiera
+  // este sistema) se calcula la huella de las hojas que el dispositivo tiene
+  // guardadas. Se guarda enseguida para no repetir el cálculo.
+  static Future<Manifiesto> _leerLocal(Manifiesto remoto) async {
     final prefs = await SharedPreferences.getInstance();
     final String? guardado = prefs.getString(_keyManifiestoLocal);
-    return Manifiesto.desdeJson(
-      guardado ?? await rootBundle.loadString('assets/versiones_iniciales.json'),
-    );
+    if (guardado != null) return Manifiesto.desdeJson(guardado);
+
+    final Map<String, HojaVersion> hojas = {};
+    final List<String> claves = remoto.hojas.keys.toList();
+    for (int i = 0; i < claves.length; i += _descargasSimultaneas) {
+      final List<String> lote =
+          claves.skip(i).take(_descargasSimultaneas).toList();
+      final List<String?> huellas = await Future.wait(
+          lote.map((clave) => RedWeb.huellaGuardada(_url(clave))));
+      for (int j = 0; j < lote.length; j++) {
+        final String? huella = huellas[j];
+        if (huella != null) hojas[lote[j]] = HojaVersion(huella, 0);
+      }
+    }
+    final Manifiesto reconstruido = Manifiesto('', hojas);
+    await guardarLocal(reconstruido);
+    return reconstruido;
   }
 
   static String _url(String clave) =>
@@ -115,7 +130,7 @@ class ActualizacionService {
   static Future<Revision> revisar() async {
     final Manifiesto? remoto = await leerRemoto();
     if (remoto == null) return const Revision(EstadoRevision.sinConexion);
-    final Manifiesto local = await _leerLocal();
+    final Manifiesto local = await _leerLocal(remoto);
 
     final Set<String> cambiadas = {
       for (final MapEntry<String, HojaVersion> hoja in remoto.hojas.entries)

@@ -42,6 +42,27 @@ class RedWeb {
     }
   }
 
+  /// Huella de la copia guardada en el dispositivo, calculada igual que en
+  /// `tool/generar_versiones.py` (SHA-256, 12 caracteres). Null si no está.
+  static Future<String?> huellaGuardada(String url) async {
+    try {
+      final web.Response? respuesta =
+          await web.window.caches.match(url.toJS).toDart;
+      if (respuesta == null) return null;
+      final JSArrayBuffer datos = await respuesta.arrayBuffer().toDart;
+      final JSAny? resumen = await web.window.crypto.subtle
+          .digest('SHA-256'.toJS, datos)
+          .toDart;
+      final List<int> bytes = (resumen as JSArrayBuffer).toDart.asUint8List();
+      return bytes
+          .take(6)
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<bool> estaGuardado(String url) async {
     try {
       return await web.window.caches.match(url.toJS).toDart != null;

@@ -14,7 +14,8 @@ class DownloadService {
   // Cambió al pasar de PDF a WebP: quien descargó los PDF tiene que volver a
   // descargar, porque las imágenes no están en su caché.
   static const String _keyDescargaCompleta = 'descarga_webp_completa';
-  static const String _carpetaAssets = 'assets/HIMNARIOS/IBEFI/';
+  static const String himnario = 'IBEFI';
+  static const String _carpetaAssets = 'assets/HIMNARIOS/$himnario/';
   static const int _descargasSimultaneas = 4;
   static final RegExp _nombrePagina = RegExp(r'^(\d+)-(\d+)\.webp$');
 
@@ -22,6 +23,9 @@ class DownloadService {
 
   /// Ruta del asset de una hoja: "34-1" es el himno 34, página 1.
   static String rutaPagina(String clave) => '$_carpetaAssets$clave.webp';
+
+  /// Manifiesto del himnario, generado por `tool/generar_versiones.py`.
+  static const String rutaManifiesto = '${_carpetaAssets}versiones.json';
 
   static Future<bool> estanArchivosDescargados() async {
     final prefs = await SharedPreferences.getInstance();

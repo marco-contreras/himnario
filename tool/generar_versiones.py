@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Genera el manifiesto con la huella y el tamaño de cada hoja de himno.
+"""Genera el versiones.json de un himnario: la huella y el tamaño de cada hoja.
 
-La app lo compara con el que tiene guardado para saber qué hojas cambiaron.
-GitHub Actions lo genera en cada publicación (ver .github/workflows/deploy.yml),
+La app lo compara con lo que tiene guardado para saber qué hojas cambiaron.
+Cada himnario tiene el suyo (assets/HIMNARIOS/<himnario>/versiones.json) y
+GitHub Actions lo regenera en cada publicación (ver .github/workflows/deploy.yml),
 así que no hay que editarlo a mano: basta con reemplazar la imagen.
 
-Uso: python3 tool/generar_versiones.py <carpeta_de_imagenes> <archivo_salida>
+Uso: python3 tool/generar_versiones.py <carpeta_del_himnario> <archivo_salida>
+Ej.: python3 tool/generar_versiones.py assets/HIMNARIOS/IBEFI assets/HIMNARIOS/IBEFI/versiones.json
 """
 import hashlib
 import json

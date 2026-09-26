@@ -61,7 +61,6 @@ flutter:
 
   assets:
     - assets/HIMNARIOS/IBEFI/
-    - assets/versiones_iniciales.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
