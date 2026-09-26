@@ -52,13 +52,20 @@ async function borrarPdfViejos() {
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
-  if (request.method !== 'GET') return;
+  // 'no-store' es versiones.json: siempre de la red, nunca una copia vieja.
+  if (request.method !== 'GET' || request.cache === 'no-store') return;
 
   const url = new URL(request.url);
   if (url.origin === self.location.origin) {
-    event.respondWith(
-      url.pathname.includes('/assets/HIMNARIOS/') ? cacheYActualizar(event) : redPrimero(event)
-    );
+    if (url.pathname.includes('/assets/HIMNARIOS/')) {
+      // Las hojas no cambian salvo que la app pida la versión nueva
+      // ('reload'), cuando versiones.json indica que cambió.
+      event.respondWith(
+        request.cache === 'reload' ? descargarYGuardar(request) : cachePrimero(request)
+      );
+    } else {
+      event.respondWith(redPrimero(event));
+    }
   } else if (HOSTS_EXTERNOS.includes(url.hostname)) {
     event.respondWith(cachePrimero(request));
   }
@@ -76,16 +83,6 @@ function descargarYGuardar(request) {
     }
     return respuesta;
   });
-}
-
-// Himnos: se sirven desde la caché y se revisa en segundo plano si cambiaron,
-// así una página corregida llega sin tener que borrar nada.
-async function cacheYActualizar(event) {
-  const red = descargarYGuardar(event.request);
-  event.waitUntil(red.catch(() => {}));
-
-  const guardada = await caches.match(event.request);
-  return guardada ?? red;
 }
 
 async function cachePrimero(request) {

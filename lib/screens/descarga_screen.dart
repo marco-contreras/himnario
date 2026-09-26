@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import '../services/actualizacion_service.dart';
 import '../services/download_service.dart';
 import 'menu_screen.dart';
 
 class DescargaScreen extends StatefulWidget {
-  const DescargaScreen({super.key});
+  /// Si se abrió desde el menú, al terminar vuelve a él en lugar de abrir
+  /// uno nuevo.
+  final bool desdeMenu;
+
+  const DescargaScreen({super.key, this.desdeMenu = false});
 
   @override
   State<DescargaScreen> createState() => _DescargaScreenState();
@@ -25,6 +30,9 @@ class _DescargaScreenState extends State<DescargaScreen> {
       _estado = 'Descargando himnos a la memoria local...';
     });
 
+    // Se lee antes de descargar: si se publica algo a mitad de la descarga,
+    // la próxima revisión lo detecta como actualización.
+    final Manifiesto? manifiesto = await ActualizacionService.leerRemoto();
     final int fallidos = await DownloadService.descargarTodosLosHimnos(
       onProgreso: (completados, total) {
         if (!mounted) return;
@@ -38,7 +46,8 @@ class _DescargaScreenState extends State<DescargaScreen> {
     if (!mounted) return;
 
     if (fallidos == 0) {
-      _irAlMenu();
+      if (manifiesto != null) await ActualizacionService.guardarLocal(manifiesto);
+      if (mounted) _irAlMenu();
       return;
     }
 
@@ -51,6 +60,10 @@ class _DescargaScreenState extends State<DescargaScreen> {
   }
 
   void _irAlMenu() {
+    if (widget.desdeMenu) {
+      Navigator.pop(context);
+      return;
+    }
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (context) => const MenuScreen()),

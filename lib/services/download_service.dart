@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/himnos_repository.dart';
 import '../models/himno.dart';
+import 'red_web.dart';
 
 /// Cada página de un himno es una imagen WebP dentro de la app
 /// (`assets/HIMNARIOS/IBEFI/<numero>-<pagina>.webp`). En web, `rootBundle.load`
@@ -18,6 +19,9 @@ class DownloadService {
   static final RegExp _nombrePagina = RegExp(r'^(\d+)-(\d+)\.webp$');
 
   static Future<Map<int, List<String>>>? _paginasPorHimno;
+
+  /// Ruta del asset de una hoja: "34-1" es el himno 34, página 1.
+  static String rutaPagina(String clave) => '$_carpetaAssets$clave.webp';
 
   static Future<bool> estanArchivosDescargados() async {
     final prefs = await SharedPreferences.getInstance();
@@ -41,7 +45,9 @@ class DownloadService {
             throw StateError('No hay páginas para el himno ${himno.numero}');
           }
           for (final ruta in rutas) {
-            await obtenerPagina(ruta);
+            if (!await RedWeb.descargarVersionNueva(RedWeb.urlDeAsset(ruta))) {
+              throw StateError('No se pudo descargar $ruta');
+            }
           }
         } catch (e) {
           fallidos++;

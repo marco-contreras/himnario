@@ -32,6 +32,9 @@ jobs:
       # que el service worker lo guarde y la app abra sin conexión.
       - run: flutter build web --release --base-href "/himnario/" --no-web-resources-cdn
 
+      # Huella de cada hoja: la app la compara para saber cuáles cambiaron.
+      - run: python3 tool/generar_versiones.py assets/HIMNARIOS/IBEFI build/web/versiones.json
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web
