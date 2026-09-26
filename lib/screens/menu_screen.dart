@@ -3,6 +3,7 @@ import '../data/himnos_repository.dart';
 import '../models/himno.dart';
 import '../services/actualizacion_service.dart';
 import '../services/download_service.dart';
+import '../services/instalacion_web.dart';
 import 'descarga_screen.dart';
 import 'visor_screen.dart';
 
@@ -46,7 +47,7 @@ class _MenuScreenState extends State<MenuScreen> {
       final bool? descargar = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Verificar descarga'),
+          title: const Text('Verificar descargas'),
           content: const Text(
               'Todavía no has descargado el himnario para usarlo sin internet. ¿Descargarlo ahora?'),
           actions: [
@@ -74,7 +75,7 @@ class _MenuScreenState extends State<MenuScreen> {
     if (!mounted) return;
     final ScaffoldMessengerState mensajes = ScaffoldMessenger.of(context);
     mensajes.showSnackBar(
-        const SnackBar(content: Text('Verificando la descarga...')));
+        const SnackBar(content: Text('Verificando las descargas...')));
     final Revision revision = await ActualizacionService.revisar();
     if (!mounted) return;
     mensajes.hideCurrentSnackBar();
@@ -83,12 +84,43 @@ class _MenuScreenState extends State<MenuScreen> {
       case EstadoRevision.sinConexion:
         mensajes.showSnackBar(const SnackBar(
             content: Text(
-                'Sin conexión. Conéctate a internet para verificar la descarga.')));
+                'Sin conexión. Conéctate a internet para verificar las descargas.')));
       case EstadoRevision.alDia:
         mensajes.showSnackBar(const SnackBar(
             content: Text('Todo el himnario está descargado y al día.')));
       case EstadoRevision.pendiente:
         await _ofrecerActualizacion();
+    }
+  }
+
+  Future<void> _instalarApp() async {
+    final ResultadoInstalacion resultado = await InstalacionWeb.instalar();
+    if (!mounted) return;
+    switch (resultado) {
+      case ResultadoInstalacion.aceptada:
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Instalando la app...')));
+      case ResultadoInstalacion.rechazada:
+        break;
+      case ResultadoInstalacion.noDisponible:
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Instalar APP'),
+            content: const Text(
+              'Este navegador no permite instalarla desde aquí, pero puedes hacerlo desde su menú:\n\n'
+              '• Android (Chrome): menú ⋮ → "Instalar aplicación" o "Agregar a la pantalla principal". '
+              'Si dice "Abrir en la app", ya está instalada.\n\n'
+              '• iPhone o iPad (Safari): botón Compartir → "Agregar a pantalla de inicio".',
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Entendido'),
+              ),
+            ],
+          ),
+        );
     }
   }
 
@@ -221,11 +253,17 @@ class _MenuScreenState extends State<MenuScreen> {
             ),
           PopupMenuButton<String>(
             tooltip: 'Más opciones',
-            onSelected: (_) => _verificarDescarga(),
-            itemBuilder: (context) => const [
-              PopupMenuItem<String>(
+            onSelected: (opcion) =>
+                opcion == 'instalar' ? _instalarApp() : _verificarDescarga(),
+            itemBuilder: (context) => [
+              if (!InstalacionWeb.estaInstalada)
+                const PopupMenuItem<String>(
+                  value: 'instalar',
+                  child: Text('Instalar APP'),
+                ),
+              const PopupMenuItem<String>(
                 value: 'verificar',
-                child: Text('Verificar descarga'),
+                child: Text('Verificar descargas'),
               ),
             ],
           ),

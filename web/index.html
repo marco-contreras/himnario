@@ -31,6 +31,26 @@
 
   <title>Himnario IBEFI</title>
   <link rel="manifest" href="manifest.json">
+
+  <script>
+    // El navegador ofrece instalar la app una sola vez y muy temprano, antes
+    // de que cargue Flutter: se guarda ese aviso para lanzarlo desde
+    // "Instalar APP" en el menú de la app.
+    window.addEventListener('beforeinstallprompt', (aviso) => {
+      aviso.preventDefault();
+      window.avisoInstalacion = aviso;
+    });
+    window.addEventListener('appinstalled', () => {
+      window.avisoInstalacion = null;
+    });
+    window.himnarioInstalar = async () => {
+      const aviso = window.avisoInstalacion;
+      if (!aviso) return 'no-disponible';
+      window.avisoInstalacion = null;
+      await aviso.prompt();
+      return (await aviso.userChoice).outcome;
+    };
+  </script>
 </head>
 <body>
   <!--
