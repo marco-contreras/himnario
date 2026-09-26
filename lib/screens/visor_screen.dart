@@ -52,6 +52,13 @@ class _VisorScreenState extends State<VisorScreen> {
   Offset? _inicioDeslizamiento;
   bool _huboVariosDedos = false;
 
+  // Alto de la vista y de la página en la última distribución, para saber si
+  // la página todavía se puede desplazar hacia arriba o hacia abajo.
+  double _altoVista = 0;
+  double _altoContenido = 0;
+  bool _enBordeSuperior = true;
+  bool _enBordeInferior = true;
+
   @override
   void initState() {
     super.initState();
@@ -74,6 +81,7 @@ class _VisorScreenState extends State<VisorScreen> {
   void _abrirHimno(Himno himno, {bool enUltimaPagina = false}) {
     _liberarPaginas();
     _transformacion.value = Matrix4.identity();
+    _altoContenido = 0;
     setState(() {
       _himnoActual = himno;
       _errorCarga = false;
@@ -153,7 +161,8 @@ class _VisorScreenState extends State<VisorScreen> {
     }
   }
 
-  // Deslizar a los lados pasa de página o de himno. Se usan eventos de
+  // Deslizar pasa de página o de himno: hacia la izquierda o hacia arriba
+  // avanza, hacia la derecha o hacia abajo retrocede. Se usan eventos de
   // puntero crudos porque el InteractiveViewer se queda con los gestos de
   // arrastre; solo cuenta con un dedo y sin zoom, para no chocar con el
   // pellizco ni con mover una página ampliada.
@@ -162,6 +171,12 @@ class _VisorScreenState extends State<VisorScreen> {
     if (_dedosEnPantalla.length == 1) {
       _inicioDeslizamiento = evento.position;
       _huboVariosDedos = false;
+      final Matrix4 m = _transformacion.value;
+      final double desplazado = -m.getTranslation().y;
+      final double maximo =
+          _altoContenido * m.getMaxScaleOnAxis() - _altoVista;
+      _enBordeSuperior = desplazado <= 1;
+      _enBordeInferior = desplazado >= maximo - 1;
     } else {
       _huboVariosDedos = true;
     }
@@ -175,10 +190,16 @@ class _VisorScreenState extends State<VisorScreen> {
     if (_huboVariosDedos || _hayZoom || evento is! PointerUpEvent) return;
 
     final Offset recorrido = evento.position - inicio;
-    final double minimo = math.max(60.0, MediaQuery.sizeOf(context).width * 0.15);
-    if (recorrido.dx.abs() >= minimo &&
+    final Size pantalla = MediaQuery.sizeOf(context);
+    if (recorrido.dx.abs() >= math.max(60.0, pantalla.width * 0.15) &&
         recorrido.dx.abs() > recorrido.dy.abs() * 2) {
       _avanzar(recorrido.dx < 0 ? 1 : -1);
+    } else if (recorrido.dy.abs() >= math.max(60.0, pantalla.height * 0.12) &&
+        recorrido.dy.abs() > recorrido.dx.abs() * 2) {
+      // Si la página es más alta que la pantalla, primero se desplaza; solo
+      // desde su borde (ya en el final o en el principio) cambia de elemento.
+      if (recorrido.dy < 0 && _enBordeInferior) _avanzar(1);
+      if (recorrido.dy > 0 && _enBordeSuperior) _avanzar(-1);
     }
   }
 
@@ -311,6 +332,9 @@ class _VisorScreenState extends State<VisorScreen> {
       builder: (context, restricciones) {
         final Size vista = restricciones.biggest;
         final double ancho = vista.width;
+        final double altoPagina = ancho * imagen.height / imagen.width;
+        _altoVista = vista.height;
+        _altoContenido = math.max(vista.height, altoPagina);
 
         return InteractiveViewer(
           transformationController: _transformacion,
@@ -324,7 +348,7 @@ class _VisorScreenState extends State<VisorScreen> {
               child: Center(
                 child: SizedBox(
                   width: ancho,
-                  height: ancho * imagen.height / imagen.width,
+                  height: altoPagina,
                   child: RawImage(
                     image: imagen,
                     fit: BoxFit.fill,
