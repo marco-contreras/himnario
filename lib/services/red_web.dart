@@ -13,6 +13,12 @@ class RedWeb {
   static String urlDeAsset(String ruta) =>
       ui_web.assetManager.getAssetUrl(ruta);
 
+  /// URL de un archivo publicado junto a index.html (respeta el base-href).
+  static String urlDelSitio(String archivo) =>
+      Uri.parse(web.document.baseURI).resolve(archivo).toString();
+
+  static void recargarPagina() => web.window.location.reload();
+
   /// Lee un archivo de texto sin pasar por ninguna caché. Devuelve null si no
   /// hay internet o el archivo no existe.
   static Future<String?> leerSinCache(String url) async {
@@ -60,6 +66,17 @@ class RedWeb {
           .join();
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Pide que el navegador no borre lo guardado aunque el dispositivo se
+  /// quede sin espacio. Sin esto los datos son "de mejor esfuerzo". Devuelve
+  /// si lo concedió (Chrome decide solo; Firefox pregunta al usuario).
+  static Future<bool> pedirAlmacenamientoPersistente() async {
+    try {
+      return (await web.window.navigator.storage.persist().toDart).toDart;
+    } catch (_) {
+      return false;
     }
   }
 

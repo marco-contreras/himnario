@@ -71,12 +71,18 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
-function descargarYGuardar(request) {
-  return fetch(request).then(async (respuesta) => {
+function descargarYGuardar(request, opciones) {
+  return fetch(request, opciones).then(async (respuesta) => {
     if (respuesta.ok) {
       try {
         const cache = await caches.open(CACHE);
-        await cache.put(request, respuesta.clone());
+        const etag = respuesta.headers.get('etag');
+        const guardada = etag ? await cache.match(request) : undefined;
+        // Si el servidor dice que no cambió no se reescribe: main.dart.js y
+        // canvaskit pesan ~8 MB y se revisan cada vez que se abre la app.
+        if (!guardada || guardada.headers.get('etag') !== etag) {
+          await cache.put(request, respuesta.clone());
+        }
       } catch (e) {
         console.warn('No se pudo guardar en caché', request.url, e);
       }
@@ -91,23 +97,40 @@ async function cachePrimero(request) {
 }
 
 // App (index.html, main.dart.js, canvaskit...): la versión más nueva si hay
-// red; si la red falla o tarda demasiado, la copia guardada.
+// red; si la red falla o tarda demasiado, la copia guardada. 'no-cache' salta
+// la caché HTTP de GitHub Pages (10 minutos): siempre le pregunta al servidor
+// si cambió, y si no cambió la respuesta es mínima.
 async function redPrimero(event) {
   const request = event.request;
-  const red = descargarYGuardar(request);
+  const red = descargarYGuardar(request, { cache: 'no-cache' });
   event.waitUntil(red.catch(() => {}));
 
   try {
-    return await Promise.race([
+    return sinReusoEnMemoria(await Promise.race([
       red,
       new Promise((_, rechazar) =>
         setTimeout(() => rechazar(new Error('timeout')), ESPERA_RED_MS)
       ),
-    ]);
+    ]));
   } catch (e) {
     const guardada =
       (await caches.match(request)) ??
       (request.mode === 'navigate' ? await caches.match('./') : undefined);
-    return guardada ?? red;
+    return sinReusoEnMemoria(guardada ?? (await red));
   }
+}
+
+// Chrome guarda en memoria los scripts ya cargados (main.dart.js, canvaskit.js)
+// y al recargar los reutiliza sin pasar por aquí mientras el Cache-Control de
+// GitHub Pages (10 minutos) diga que siguen frescos: "Actualizar" recargaba la
+// versión vieja. Con no-cache tiene que volver a pedírselos a este worker.
+function sinReusoEnMemoria(respuesta) {
+  if (!respuesta.ok) return respuesta;
+  const encabezados = new Headers(respuesta.headers);
+  encabezados.set('Cache-Control', 'no-cache');
+  return new Response(respuesta.body, {
+    status: respuesta.status,
+    statusText: respuesta.statusText,
+    headers: encabezados,
+  });
 }

@@ -79,7 +79,6 @@ class Revision {
 class ActualizacionService {
   static const String _keyManifiestoLocal =
       'manifiesto_${DownloadService.himnario}';
-  static const int _descargasSimultaneas = 4;
 
   static Future<Manifiesto?> leerRemoto() async {
     final String? texto = await RedWeb.leerSinCache(
@@ -107,9 +106,9 @@ class ActualizacionService {
 
     final Map<String, HojaVersion> hojas = {};
     final List<String> claves = remoto.hojas.keys.toList();
-    for (int i = 0; i < claves.length; i += _descargasSimultaneas) {
-      final List<String> lote =
-          claves.skip(i).take(_descargasSimultaneas).toList();
+    const int tanda = DownloadService.descargasSimultaneas;
+    for (int i = 0; i < claves.length; i += tanda) {
+      final List<String> lote = claves.skip(i).take(tanda).toList();
       final List<String?> huellas = await Future.wait(
           lote.map((clave) => RedWeb.huellaGuardada(_url(clave))));
       for (int j = 0; j < lote.length; j++) {
@@ -188,9 +187,9 @@ class ActualizacionService {
     int hechas = 0;
     int fallidas = 0;
 
-    for (int i = 0; i < hojas.length; i += _descargasSimultaneas) {
-      await Future.wait(
-          hojas.skip(i).take(_descargasSimultaneas).map((clave) async {
+    const int tanda = DownloadService.descargasSimultaneas;
+    for (int i = 0; i < hojas.length; i += tanda) {
+      await Future.wait(hojas.skip(i).take(tanda).map((clave) async {
         if (await RedWeb.descargarVersionNueva(_url(clave))) {
           descargadas[clave] = pendiente.remoto.hojas[clave]!;
         } else {

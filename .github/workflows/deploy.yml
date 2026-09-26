@@ -30,7 +30,10 @@ jobs:
 
       # --no-web-resources-cdn: canvaskit se sirve desde el propio sitio para
       # que el service worker lo guarde y la app abra sin conexión.
-      - run: flutter build web --release --base-href "/himnario/" --no-web-resources-cdn
+      # DESPLIEGUE y despliegue.txt llevan el mismo commit: si la app abierta
+      # ve en despliegue.txt otro distinto al suyo, ofrece actualizarse.
+      - run: flutter build web --release --base-href "/himnario/" --no-web-resources-cdn --dart-define=DESPLIEGUE=${{ github.sha }}
+      - run: echo -n "${{ github.sha }}" > build/web/despliegue.txt
 
       # versiones.json de cada himnario, con la huella de cada hoja: la app lo
       # compara para saber cuáles cambiaron. Se genera aquí para que siempre

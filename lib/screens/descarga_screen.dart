@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../services/actualizacion_service.dart';
 import '../services/download_service.dart';
+import '../services/red_web.dart';
 import 'menu_screen.dart';
 
 class DescargaScreen extends StatefulWidget {
@@ -34,6 +37,13 @@ class _DescargaScreenState extends State<DescargaScreen> {
     // la próxima revisión lo detecta como actualización.
     final Manifiesto? manifiesto = await ActualizacionService.leerRemoto();
     final int fallidos = await DownloadService.descargarTodosLosHimnos(
+      huellasPublicadas: manifiesto == null
+          ? null
+          : {
+              for (final MapEntry<String, HojaVersion> hoja
+                  in manifiesto.hojas.entries)
+                hoja.key: hoja.value.hash,
+            },
       onProgreso: (completados, total) {
         if (!mounted) return;
         setState(() {
@@ -46,6 +56,7 @@ class _DescargaScreenState extends State<DescargaScreen> {
     if (!mounted) return;
 
     if (fallidos == 0) {
+      unawaited(RedWeb.pedirAlmacenamientoPersistente());
       if (manifiesto != null) await ActualizacionService.guardarLocal(manifiesto);
       if (mounted) _irAlMenu();
       return;
