@@ -261,7 +261,7 @@ class _VisorScreenState extends State<VisorScreen> {
           leading: const Icon(Icons.search),
           elevation: const WidgetStatePropertyAll(0),
           backgroundColor: const WidgetStatePropertyAll(Colors.white),
-          constraints: const BoxConstraints(maxWidth: 130, minHeight: 40),
+          constraints: const BoxConstraints(maxWidth: 110, minHeight: 40),
           side: WidgetStatePropertyAll(
             BorderSide(color: Theme.of(context).colorScheme.outline),
           ),
