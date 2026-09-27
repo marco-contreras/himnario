@@ -5,6 +5,7 @@ import '../services/actualizacion_service.dart';
 import '../services/download_service.dart';
 import '../services/instalacion_web.dart';
 import 'descarga_screen.dart';
+import 'respaldo_ui.dart';
 import 'visor_screen.dart';
 
 enum OrdenHimnos { numero, nombre }
@@ -39,6 +40,14 @@ class _MenuScreenState extends State<MenuScreen> {
     if (!mounted) return;
     setState(() => _actualizacion = revision.pendiente);
     if (revision.pendiente != null) await _ofrecerActualizacion();
+  }
+
+  // Tras restaurar se revisa de nuevo: si el respaldo era más viejo que lo
+  // publicado, ofrece bajar solo las hojas que cambiaron.
+  Future<void> _restaurarRespaldo() async {
+    if (await RespaldoUi.restaurar(context) != null && mounted) {
+      await _revisarActualizaciones();
+    }
   }
 
   Future<void> _verificarDescarga() async {
@@ -253,14 +262,26 @@ class _MenuScreenState extends State<MenuScreen> {
             ),
           PopupMenuButton<String>(
             tooltip: 'Más opciones',
-            onSelected: (opcion) =>
-                opcion == 'instalar' ? _instalarApp() : _verificarDescarga(),
+            onSelected: (opcion) => switch (opcion) {
+              'instalar' => _instalarApp(),
+              'respaldo' => RespaldoUi.guardar(context),
+              'restaurar' => _restaurarRespaldo(),
+              _ => _verificarDescarga(),
+            },
             itemBuilder: (context) => [
               if (!InstalacionWeb.estaInstalada)
                 const PopupMenuItem<String>(
                   value: 'instalar',
                   child: Text('Instalar APP'),
                 ),
+              const PopupMenuItem<String>(
+                value: 'respaldo',
+                child: Text('Guardar respaldo'),
+              ),
+              const PopupMenuItem<String>(
+                value: 'restaurar',
+                child: Text('Restaurar desde archivo'),
+              ),
               const PopupMenuItem<String>(
                 value: 'verificar',
                 child: Text('Verificar descargas'),

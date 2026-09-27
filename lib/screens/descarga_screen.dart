@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import '../services/actualizacion_service.dart';
 import '../services/download_service.dart';
 import '../services/red_web.dart';
+import '../services/respaldo_service.dart';
 import 'menu_screen.dart';
+import 'respaldo_ui.dart';
 
 class DescargaScreen extends StatefulWidget {
   /// Si se abrió desde el menú, al terminar vuelve a él en lugar de abrir
@@ -81,6 +83,13 @@ class _DescargaScreenState extends State<DescargaScreen> {
     );
   }
 
+  // Con el respaldo completo se entra directo al menú, igual que al terminar
+  // la descarga; si faltan hojas se queda aquí para descargarlas.
+  Future<void> _restaurar() async {
+    final ResultadoRestauracion? resultado = await RespaldoUi.restaurar(context);
+    if (resultado != null && resultado.faltantes == 0 && mounted) _irAlMenu();
+  }
+
   @override
   Widget build(BuildContext context) {
     double progreso = _total > 0 ? _completados / _total : 0.0;
@@ -126,6 +135,12 @@ class _DescargaScreenState extends State<DescargaScreen> {
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _restaurar,
+                  icon: const Icon(Icons.restore),
+                  label: const Text('Restaurar desde archivo'),
                 ),
                 const SizedBox(height: 12),
                 TextButton(

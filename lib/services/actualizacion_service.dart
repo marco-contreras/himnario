@@ -96,6 +96,13 @@ class ActualizacionService {
     await prefs.setString(_keyManifiestoLocal, manifiesto.aJson());
   }
 
+  /// El registro de hojas guardadas tal como está, sin reconstruirlo.
+  static Future<Manifiesto?> leerLocalGuardado() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? guardado = prefs.getString(_keyManifiestoLocal);
+    return guardado == null ? null : Manifiesto.desdeJson(guardado);
+  }
+
   // Sin registro guardado (por ejemplo, quien descargó antes de que existiera
   // este sistema) se calcula la huella de las hojas que el dispositivo tiene
   // guardadas. Se guarda enseguida para no repetir el cálculo.

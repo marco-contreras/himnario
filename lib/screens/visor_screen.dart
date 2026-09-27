@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/himnos_repository.dart';
 import '../models/himno.dart';
 import '../services/download_service.dart';
@@ -22,6 +23,8 @@ class VisorScreen extends StatefulWidget {
 
 class _VisorScreenState extends State<VisorScreen> {
   static const double _zoomMaximo = 4.0;
+  static const String _keyAnchoHorizontal = 'ancho_hoja_horizontal';
+  static const double _anchoToqueBarra = 36;
 
   static const Widget _indicadorCarga = Center(
     child: Column(
@@ -59,11 +62,64 @@ class _VisorScreenState extends State<VisorScreen> {
   bool _enBordeSuperior = true;
   bool _enBordeInferior = true;
 
+  // En horizontal, fracción del ancho de la pantalla que ocupa la hoja. Null
+  // hasta que el usuario la ajusta con las barras: la hoja se ajusta a lo alto
+  // y se ve completa.
+  double? _fraccionAncho;
+  bool _conZoom = false;
+  // Centro (x) de cada barra en la última distribución, para que arrastrar
+  // una barra no cuente como deslizar a otra página.
+  List<double> _barras = const [];
+
   @override
   void initState() {
     super.initState();
     _himnoActual = widget.himnoActual;
+    _transformacion.addListener(_alCambiarZoom);
+    SharedPreferences.getInstance().then((prefs) {
+      final double? guardada = prefs.getDouble(_keyAnchoHorizontal);
+      if (guardada != null && mounted) {
+        setState(() => _fraccionAncho = guardada);
+      }
+    });
     _cargarHimno();
+  }
+
+  // Las barras se ocultan con zoom: la hoja ampliada ya no coincide con ellas.
+  void _alCambiarZoom() {
+    if (_hayZoom != _conZoom) setState(() => _conZoom = _hayZoom);
+  }
+
+  double _anchoMinimo(Size vista, double aspecto) =>
+      math.min(vista.width * 0.3, vista.height * aspecto);
+
+  double _anchoHorizontal(Size vista, double aspecto) {
+    final double completa = math.min(vista.width, vista.height * aspecto);
+    final double? fraccion = _fraccionAncho;
+    return (fraccion == null ? completa : fraccion * vista.width)
+        .clamp(_anchoMinimo(vista, aspecto), vista.width);
+  }
+
+  // Las dos barras se mueven en espejo: la hoja crece o se achica centrada.
+  void _ajustarAncho(Size vista, double aspecto, double cambio) {
+    final double anterior = _anchoHorizontal(vista, aspecto);
+    final double nuevo =
+        (anterior + cambio).clamp(_anchoMinimo(vista, aspecto), vista.width);
+    if (nuevo == anterior) return;
+    // Mantiene a la vista la misma parte de la hoja aunque cambie su alto.
+    final double y =
+        _transformacion.value.getTranslation().y * nuevo / anterior;
+    final double maximo = math.max(0.0, nuevo / aspecto - vista.height);
+    _transformacion.value =
+        Matrix4.translationValues(0, y.clamp(-maximo, 0.0), 0);
+    setState(() => _fraccionAncho = nuevo / vista.width);
+  }
+
+  Future<void> _guardarAncho() async {
+    final double? fraccion = _fraccionAncho;
+    if (fraccion == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_keyAnchoHorizontal, fraccion);
   }
 
   int get _indiceActual =>
@@ -169,6 +225,11 @@ class _VisorScreenState extends State<VisorScreen> {
   void _alTocar(PointerDownEvent evento) {
     _dedosEnPantalla.add(evento.pointer);
     if (_dedosEnPantalla.length == 1) {
+      if (_barras.any((x) =>
+          (evento.localPosition.dx - x).abs() <= _anchoToqueBarra / 2)) {
+        _inicioDeslizamiento = null;
+        return;
+      }
       _inicioDeslizamiento = evento.position;
       _huboVariosDedos = false;
       final Matrix4 m = _transformacion.value;
@@ -331,18 +392,40 @@ class _VisorScreenState extends State<VisorScreen> {
     return LayoutBuilder(
       builder: (context, restricciones) {
         final Size vista = restricciones.biggest;
-        final double ancho = vista.width;
-        final double altoPagina = ancho * imagen.height / imagen.width;
+        final double aspecto = imagen.width / imagen.height;
+        // En horizontal la hoja a todo lo ancho no cabe a lo alto; por eso se
+        // angosta, con barras a los lados para ajustarla.
+        final bool horizontal = vista.width > vista.height;
+        final double ancho =
+            horizontal ? _anchoHorizontal(vista, aspecto) : vista.width;
+        final double altoPagina = ancho / aspecto;
         _altoVista = vista.height;
         _altoContenido = math.max(vista.height, altoPagina);
 
-        return InteractiveViewer(
+        final bool conBarras = horizontal && !_conZoom;
+        final double margen = (vista.width - ancho) / 2;
+        final List<(int, double)> barras = [
+          for (final (int lado, double borde) in [
+            (-1, margen),
+            (1, vista.width - margen),
+          ])
+            (
+              lado,
+              (borde - _anchoToqueBarra / 2)
+                  .clamp(0.0, vista.width - _anchoToqueBarra),
+            ),
+        ];
+        _barras = conBarras
+            ? [for (final (_, izquierda) in barras) izquierda + _anchoToqueBarra / 2]
+            : const [];
+
+        final Widget visor = InteractiveViewer(
           transformationController: _transformacion,
           constrained: false,
           minScale: 1.0,
           maxScale: _zoomMaximo,
           child: SizedBox(
-            width: ancho,
+            width: vista.width,
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: vista.height),
               child: Center(
@@ -358,6 +441,27 @@ class _VisorScreenState extends State<VisorScreen> {
               ),
             ),
           ),
+        );
+        // Siempre dentro del Stack, aunque no haya barras: si el visor cambiara
+        // de lugar en el árbol al ocultarlas, Flutter lo recrearía y cortaría
+        // el pellizco justo cuando empieza el zoom.
+        return Stack(
+          children: [
+            visor,
+            if (conBarras)
+              for (final (int lado, double izquierda) in barras)
+                Positioned(
+                  left: izquierda,
+                  top: 0,
+                  bottom: 0,
+                  width: _anchoToqueBarra,
+                  child: _BarraAncho(
+                    onArrastre: (dx) =>
+                        _ajustarAncho(vista, aspecto, lado * dx * 2),
+                    onFin: _guardarAncho,
+                  ),
+                ),
+          ],
         );
       },
     );
@@ -468,6 +572,42 @@ class _VisorScreenState extends State<VisorScreen> {
                   tooltip: 'Siguiente',
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Barra lateral para ajustar el ancho de la hoja en horizontal: una línea
+/// fina con una agarradera en el centro, y una zona de toque más ancha.
+class _BarraAncho extends StatelessWidget {
+  final void Function(double dx) onArrastre;
+  final VoidCallback onFin;
+
+  const _BarraAncho({required this.onArrastre, required this.onFin});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = Theme.of(context).colorScheme.outline;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (detalles) => onArrastre(detalles.delta.dx),
+        onHorizontalDragEnd: (_) => onFin(),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(width: 1.5, color: color.withValues(alpha: 0.35)),
+            Container(
+              width: 8,
+              height: 64,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
           ],
         ),

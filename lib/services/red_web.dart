@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:js_interop';
+import 'dart:typed_data';
 import 'dart:ui_web' as ui_web;
 
 import 'package:web/web.dart' as web;
@@ -48,25 +50,117 @@ class RedWeb {
     }
   }
 
-  /// Huella de la copia guardada en el dispositivo, calculada igual que en
-  /// `tool/generar_versiones.py` (SHA-256, 12 caracteres). Null si no está.
+  /// Huella de la copia guardada en el dispositivo. Null si no está.
   static Future<String?> huellaGuardada(String url) async {
+    final Uint8List? datos = await leerGuardado(url);
+    return datos == null ? null : huellaDe(datos);
+  }
+
+  /// Huella calculada igual que en `tool/generar_versiones.py` (SHA-256, 12
+  /// caracteres).
+  static Future<String> huellaDe(Uint8List datos) async {
+    final JSAny? resumen = await web.window.crypto.subtle
+        .digest('SHA-256'.toJS, datos.toJS)
+        .toDart;
+    return (resumen as JSArrayBuffer)
+        .toDart
+        .asUint8List()
+        .take(6)
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
+  }
+
+  /// La copia guardada en el dispositivo. Null si no está.
+  static Future<Uint8List?> leerGuardado(String url) async {
     try {
       final web.Response? respuesta =
           await web.window.caches.match(url.toJS).toDart;
       if (respuesta == null) return null;
-      final JSArrayBuffer datos = await respuesta.arrayBuffer().toDart;
-      final JSAny? resumen = await web.window.crypto.subtle
-          .digest('SHA-256'.toJS, datos)
-          .toDart;
-      final List<int> bytes = (resumen as JSArrayBuffer).toDart.asUint8List();
-      return bytes
-          .take(6)
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join();
+      return (await respuesta.arrayBuffer().toDart).toDart.asUint8List();
     } catch (_) {
       return null;
     }
+  }
+
+  /// Guarda [datos] como si se hubieran descargado de [url]: el service
+  /// worker los entrega desde ahí sin pedirlos al servidor.
+  static Future<void> guardar(String url, Uint8List datos, String tipo) async {
+    final web.Cache cache = await web.window.caches.open(_cache).toDart;
+    final web.Headers encabezados = web.Headers()
+      ..set('Content-Type', tipo)
+      ..set('Content-Length', '${datos.length}');
+    await cache
+        .put(url.toJS,
+            web.Response(datos.toJS, web.ResponseInit(headers: encabezados)))
+        .toDart;
+  }
+
+  /// Datos en la memoria del navegador (puede usar el disco si son grandes),
+  /// para armar archivos grandes sin copiarlos en la memoria de la app.
+  static web.Blob aBlob(Uint8List datos) =>
+      web.Blob(<JSAny>[datos.toJS].toJS);
+
+  /// Descarga un archivo armado con [partes]: en Android va a Descargas, en
+  /// iPad pregunta dónde guardarlo.
+  static void descargarArchivo(
+      List<web.Blob> partes, String nombre, String tipo) {
+    final web.Blob archivo =
+        web.Blob(partes.toJS, web.BlobPropertyBag(type: tipo));
+    final String url = web.URL.createObjectURL(archivo);
+    (web.HTMLAnchorElement()
+          ..href = url
+          ..download = nombre)
+        .click();
+    // Se libera después: si se libera enseguida, algunos navegadores cancelan
+    // la descarga antes de empezar.
+    Future<void>.delayed(const Duration(minutes: 1), () {
+      web.URL.revokeObjectURL(url);
+    });
+  }
+
+  /// Abre el selector de archivos del dispositivo. Tiene que llamarse
+  /// directamente desde un toque (sin esperas antes), o el navegador lo
+  /// bloquea. Null si el usuario no eligió nada.
+  static Future<web.File?> elegirArchivo(String aceptar) {
+    final Completer<web.File?> elegido = Completer();
+    final web.HTMLInputElement selector = web.HTMLInputElement()
+      ..type = 'file'
+      ..accept = aceptar;
+    selector.style.display = 'none';
+    void terminar(web.File? archivo) {
+      if (!elegido.isCompleted) elegido.complete(archivo);
+      selector.remove();
+    }
+
+    selector.addEventListener(
+        'change',
+        ((web.Event _) {
+          final web.FileList? archivos = selector.files;
+          terminar(
+              archivos != null && archivos.length > 0 ? archivos.item(0) : null);
+        }).toJS);
+    selector.addEventListener('cancel', ((web.Event _) => terminar(null)).toJS);
+    web.document.body!.append(selector);
+    selector.click();
+    return elegido.future;
+  }
+
+  /// Bytes de [inicio] a [fin] del archivo, sin leer el resto.
+  static Future<Uint8List> leerTrozo(web.Blob archivo, int inicio, int fin) async =>
+      (await archivo.slice(inicio, fin).arrayBuffer().toDart)
+          .toDart
+          .asUint8List();
+
+  /// Descomprime un trozo comprimido con deflate (el método normal de ZIP).
+  static Future<Uint8List> descomprimir(web.Blob trozo) async {
+    final web.DecompressionStream descompresor =
+        web.DecompressionStream('deflate-raw');
+    final web.ReadableStream salida = trozo.stream().pipeThrough(
+        web.ReadableWritablePair(
+            readable: descompresor.readable, writable: descompresor.writable));
+    return (await web.Response(salida).arrayBuffer().toDart)
+        .toDart
+        .asUint8List();
   }
 
   /// Pide que el navegador no borre lo guardado aunque el dispositivo se

@@ -26,7 +26,8 @@ class DownloadService {
   /// Ruta del asset de una hoja: "34-1" es el himno 34, página 1.
   static String rutaPagina(String clave) => '$_carpetaAssets$clave.webp';
 
-  static String _clave(String ruta) =>
+  /// Clave de una hoja ("34-1") a partir de la ruta de su asset.
+  static String claveDe(String ruta) =>
       ruta.substring(_carpetaAssets.length, ruta.length - '.webp'.length);
 
   /// Manifiesto del himnario, generado por `tool/generar_versiones.py`.
@@ -58,7 +59,7 @@ class DownloadService {
           }
           for (final ruta in rutas) {
             final String url = RedWeb.urlDeAsset(ruta);
-            final String? publicada = huellasPublicadas?[_clave(ruta)];
+            final String? publicada = huellasPublicadas?[claveDe(ruta)];
             if (publicada != null &&
                 await RedWeb.huellaGuardada(url) == publicada) {
               continue;
@@ -76,19 +77,31 @@ class DownloadService {
       }));
     }
 
-    if (fallidos == 0) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_keyDescargaCompleta, true);
-    }
+    if (fallidos == 0) await marcarDescargaCompleta();
     return fallidos;
   }
 
+  static Future<void> marcarDescargaCompleta() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyDescargaCompleta, true);
+  }
+
   /// Rutas de las páginas del himno, en orden.
-  static Future<List<String>> paginasDe(Himno himno) async {
+  static Future<List<String>> paginasDe(Himno himno) async =>
+      (await _paginas())[himno.numero] ?? const [];
+
+  /// Rutas de todas las hojas del himnario, por número y página.
+  static Future<List<String>> todasLasRutas() async {
+    final Map<int, List<String>> paginas = await _paginas();
+    final List<int> numeros = paginas.keys.toList()..sort();
+    return [for (final int numero in numeros) ...paginas[numero]!];
+  }
+
+  static Future<Map<int, List<String>>> _paginas() async {
     final Future<Map<int, List<String>>> lectura =
         _paginasPorHimno ??= _leerPaginas();
     try {
-      return (await lectura)[himno.numero] ?? const [];
+      return await lectura;
     } catch (_) {
       // Sin esto, un fallo (por ejemplo, sin internet la primera vez) quedaría
       // guardado y no se volvería a intentar.
