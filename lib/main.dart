@@ -91,8 +91,6 @@ class _HimnarioAppState extends State<HimnarioApp> {
           }
 
           final bool descargado = snapshot.data ?? false;
-
-          // Si ya están descargados va directo al Menú, si no, pide descargar
           return descargado ? const MenuScreen() : const DescargaScreen();
         },
       ),
