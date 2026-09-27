@@ -4,6 +4,7 @@ import '../models/himno.dart';
 import '../services/actualizacion_service.dart';
 import '../services/download_service.dart';
 import '../services/instalacion_web.dart';
+import '../services/version_app_service.dart';
 import 'descarga_screen.dart';
 import 'respaldo_ui.dart';
 import 'visor_screen.dart';
@@ -40,6 +41,19 @@ class _MenuScreenState extends State<MenuScreen> {
     if (!mounted) return;
     setState(() => _actualizacion = revision.pendiente);
     if (revision.pendiente != null) await _ofrecerActualizacion();
+  }
+
+  PopupMenuItem<String> _opcion(String valor, IconData icono, String texto) {
+    return PopupMenuItem<String>(
+      value: valor,
+      child: Row(
+        children: [
+          Icon(icono, size: 22),
+          const SizedBox(width: 12),
+          Text(texto),
+        ],
+      ),
+    );
   }
 
   // Tras restaurar se revisa de nuevo: si el respaldo era más viejo que lo
@@ -263,29 +277,20 @@ class _MenuScreenState extends State<MenuScreen> {
           PopupMenuButton<String>(
             tooltip: 'Más opciones',
             onSelected: (opcion) => switch (opcion) {
+              'actualizar_app' => VersionAppService.actualizar(),
               'instalar' => _instalarApp(),
               'respaldo' => RespaldoUi.guardar(context),
               'restaurar' => _restaurarRespaldo(),
               _ => _verificarDescarga(),
             },
             itemBuilder: (context) => [
+              if (VersionAppService.versionNuevaDisponible)
+                _opcion('actualizar_app', Icons.system_update, 'Actualizar APP'),
               if (!InstalacionWeb.estaInstalada)
-                const PopupMenuItem<String>(
-                  value: 'instalar',
-                  child: Text('Instalar APP'),
-                ),
-              const PopupMenuItem<String>(
-                value: 'respaldo',
-                child: Text('Guardar respaldo'),
-              ),
-              const PopupMenuItem<String>(
-                value: 'restaurar',
-                child: Text('Restaurar desde archivo'),
-              ),
-              const PopupMenuItem<String>(
-                value: 'verificar',
-                child: Text('Verificar descargas'),
-              ),
+                _opcion('instalar', Icons.install_mobile, 'Instalar APP'),
+              _opcion('respaldo', Icons.save_alt, 'Guardar respaldo'),
+              _opcion('restaurar', Icons.restore, 'Restaurar desde archivo'),
+              _opcion('verificar', Icons.download_done, 'Verificar descargas'),
             ],
           ),
         ],

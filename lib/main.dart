@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'screens/menu_screen.dart';
 import 'screens/descarga_screen.dart';
 import 'services/download_service.dart';
-import 'services/red_web.dart';
 import 'services/version_app_service.dart';
 
 void main() {
@@ -64,7 +63,7 @@ class _HimnarioAppState extends State<HimnarioApp> {
             child: const Text('Después'),
           ),
           const FilledButton(
-            onPressed: RedWeb.recargarPagina,
+            onPressed: VersionAppService.actualizar,
             child: Text('Actualizar'),
           ),
         ],
