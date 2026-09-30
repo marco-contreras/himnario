@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/himnos_repository.dart';
 import '../models/himno.dart';
@@ -76,6 +77,7 @@ class _VisorScreenState extends State<VisorScreen> {
     super.initState();
     _himnoActual = widget.himnoActual;
     _transformacion.addListener(_alCambiarZoom);
+    HardwareKeyboard.instance.addHandler(_alTecla);
     SharedPreferences.getInstance().then((prefs) {
       final double? guardada = prefs.getDouble(_keyAnchoHorizontal);
       if (guardada != null && mounted) {
@@ -217,6 +219,59 @@ class _VisorScreenState extends State<VisorScreen> {
     }
   }
 
+  // Teclado y pedales para pasar páginas (se conectan como teclado Bluetooth,
+  // en sus modos Re Pág/Av Pág, ←/→ o ↑/↓). Las flechas pasan de página
+  // directamente, como un deslizamiento largo, aunque haya zoom.
+  static final Map<LogicalKeyboardKey, int> _flechas = {
+    LogicalKeyboardKey.arrowRight: 1,
+    LogicalKeyboardKey.arrowDown: 1,
+    LogicalKeyboardKey.arrowLeft: -1,
+    LogicalKeyboardKey.arrowUp: -1,
+  };
+  // Re Pág/Av Pág primero recorren la hoja si es más alta que la pantalla.
+  static final Map<LogicalKeyboardKey, int> _teclasPagina = {
+    LogicalKeyboardKey.pageDown: 1,
+    LogicalKeyboardKey.pageUp: -1,
+  };
+
+  bool _alTecla(KeyEvent evento) {
+    // Solo al pisar: mantener la tecla no pasa varias páginas seguidas.
+    if (evento is! KeyDownEvent || !mounted) return false;
+    final int? flecha = _flechas[evento.logicalKey];
+    final int? pagina = _teclasPagina[evento.logicalKey];
+    // Con la búsqueda (u otra pantalla) encima, las teclas son para ella.
+    if ((flecha == null && pagina == null) ||
+        _buscador.isOpen ||
+        !(ModalRoute.isCurrentOf(context) ?? false)) {
+      return false;
+    }
+    if (flecha != null) {
+      _avanzar(flecha);
+    } else {
+      _recorrerOPasar(pagina!);
+    }
+    return true;
+  }
+
+  // Si la hoja es más alta que la pantalla (en horizontal con las barras
+  // abiertas, o con zoom), primero se recorre y solo desde el borde se pasa de
+  // página, para no saltarse la parte de abajo. Cada paso repite un poco de lo
+  // anterior para no perder el renglón.
+  void _recorrerOPasar(int direccion) {
+    final Matrix4 m = _transformacion.value;
+    final double desplazado = -m.getTranslation().y;
+    final double maximo = math.max(
+        0.0, _altoContenido * m.getMaxScaleOnAxis() - _altoVista);
+    final double destino =
+        (desplazado + direccion * _altoVista * 0.9).clamp(0.0, maximo);
+    if ((destino - desplazado).abs() > 1) {
+      _transformacion.value = m.clone()
+        ..setTranslationRaw(m.getTranslation().x, -destino, 0);
+      return;
+    }
+    _avanzar(direccion);
+  }
+
   // Deslizar pasa de página o de himno: hacia la izquierda o hacia arriba
   // avanza, hacia la derecha o hacia abajo retrocede. Se usan eventos de
   // puntero crudos porque el InteractiveViewer se queda con los gestos de
@@ -350,6 +405,7 @@ class _VisorScreenState extends State<VisorScreen> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_alTecla);
     _buscador.dispose();
     _transformacion.dispose();
     _liberarPaginas();
