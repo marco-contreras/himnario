@@ -5,6 +5,7 @@ import '../services/actualizacion_service.dart';
 import '../services/download_service.dart';
 import '../services/instalacion_web.dart';
 import '../services/version_app_service.dart';
+import 'ayuda_screen.dart';
 import 'descarga_screen.dart';
 import 'respaldo_ui.dart';
 import 'visor_screen.dart';
@@ -281,6 +282,10 @@ class _MenuScreenState extends State<MenuScreen> {
               'instalar' => _instalarApp(),
               'respaldo' => RespaldoUi.guardar(context),
               'restaurar' => _restaurarRespaldo(),
+              'ayuda' => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AyudaScreen()),
+                ),
               _ => _verificarDescarga(),
             },
             itemBuilder: (context) => [
@@ -291,6 +296,7 @@ class _MenuScreenState extends State<MenuScreen> {
               _opcion('respaldo', Icons.save_alt, 'Guardar respaldo'),
               _opcion('restaurar', Icons.restore, 'Restaurar desde archivo'),
               _opcion('verificar', Icons.download_done, 'Verificar descargas'),
+              _opcion('ayuda', Icons.help_outline, 'Ayuda'),
             ],
           ),
         ],
