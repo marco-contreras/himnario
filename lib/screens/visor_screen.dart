@@ -234,6 +234,11 @@ class _VisorScreenState extends State<VisorScreen> {
     LogicalKeyboardKey.pageUp: -1,
   };
 
+  // Algunos pedales mandan la misma tecla dos veces muy seguido y pasaban dos
+  // páginas: después de cada movimiento se ignoran las teclas un momento.
+  static const Duration _esperaEntreTeclas = Duration(seconds: 2);
+  DateTime? _ultimaTecla;
+
   bool _alTecla(KeyEvent evento) {
     // Solo al pisar: mantener la tecla no pasa varias páginas seguidas.
     if (evento is! KeyDownEvent || !mounted) return false;
@@ -245,6 +250,12 @@ class _VisorScreenState extends State<VisorScreen> {
         !(ModalRoute.isCurrentOf(context) ?? false)) {
       return false;
     }
+    final DateTime ahora = DateTime.now();
+    final DateTime? ultima = _ultimaTecla;
+    if (ultima != null && ahora.difference(ultima) < _esperaEntreTeclas) {
+      return true;
+    }
+    _ultimaTecla = ahora;
     if (flecha != null) {
       _avanzar(flecha);
     } else {

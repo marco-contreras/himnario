@@ -81,6 +81,8 @@ class AyudaScreen extends StatelessWidget {
               _Punto('Con ←/→ o ↑/↓ cambia de hoja directamente.'),
               _Punto(
                   'Con Re Pág/Av Pág, si la hoja no cabe completa en la pantalla, primero la recorre y después pasa a la siguiente.'),
+              _Punto(
+                  'Después de cada pisada espera 2 segundos antes de aceptar otra, para no pasar dos páginas por accidente.'),
               _Punto('Funciona dentro de un himno, no en la lista.'),
               _Subtitulo('Si deja de aparecer el teclado en pantalla'),
               _Punto(
